@@ -1,4 +1,4 @@
-use web_sys::{Event, HtmlInputElement};
+use web_sys::{Event, HtmlElement, HtmlInputElement};
 use wasm_bindgen::JsCast;
 
 
@@ -11,6 +11,21 @@ pub fn set_panic_hook() {
     // https://github.com/rustwasm/console_error_panic_hook#readme
     #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
+}
+
+
+pub fn input_value(input:&HtmlElement) -> Option<String> {
+  let input:HtmlInputElement =
+    input
+    .clone()
+    .dyn_into()
+    .ok()?;
+  Some(
+    input
+      .value()
+      .trim()
+      .to_string()
+  )
 }
 
 

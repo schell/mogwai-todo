@@ -34,7 +34,7 @@ fn mk_todo_input() -> (GizmoBuilder, Receiver<String>) {
     Receiver::new();
   // Wire transmission of input events to the receive todo names as strings.
   // Make sure this only happens when the string is not empty.
-  tx_todo_input_event.wire_map(
+  tx_todo_input_event.wire_filter_map(
     &rx_todo_input,
     |ev:&Event| -> Option<String> {
       let todo_name = utils::event_input_value(ev).unwrap();
@@ -51,10 +51,9 @@ fn mk_todo_input() -> (GizmoBuilder, Receiver<String>) {
   // Branch the receiver so we can forward without mutating and overwriting the
   // original.
   let rx_todo_input_value:Receiver<String> =
-    rx_todo_input
-    .branch_map(|_| {
+    rx_todo_input.branch_map(|_| {
       trace!("Clearing out the input value");
-      Some("".into())
+      "".into()
     });
 
   let input =
@@ -87,7 +86,7 @@ fn todo_footer(
       } else {
         "items"
       };
-    Some(format!("{} {} left", n, items))
+    format!("{} {} left", n, items)
   });
 
   footer()

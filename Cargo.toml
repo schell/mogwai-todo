@@ -36,7 +36,8 @@ path = "../mogwai/mogwai"
 [dependencies.web-sys]
 version = "0.3"
 features = [
-  "HtmlInputElement"
+  "HtmlInputElement",
+  "KeyboardEvent",
 ]
 
 [dev-dependencies]

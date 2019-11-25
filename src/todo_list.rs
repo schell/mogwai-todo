@@ -4,11 +4,9 @@ use super::todo::Todo;
 
 
 pub enum TodoListMsg {
-  AddTodo(String),
-  RemoveTodo(usize),
-  CompleteTodo(usize),
-  UncompleteTodo(usize),
-  EditedTodo(usize, String)
+  TodoAdd(String),
+  TodoRemove(usize),
+  TodoUpdateName(usize, TodoState),
 }
 
 
@@ -19,13 +17,13 @@ pub struct TodoList {
   gizmo: Gizmo
 }
 
-pub fn mk_bool_to_display() -> impl Fn(&bool) -> Option<String> {
+pub fn mk_bool_to_display() -> impl Fn(&bool) -> String {
   |should| {
     trace!("should display: {}", should);
     if *should {
-      Some("block".to_string())
+      "block".to_string()
     } else {
-      Some("none".to_string())
+      "none".to_string()
     }
   }
 }
@@ -59,7 +57,7 @@ impl TodoList {
 
   pub fn add_todo(&mut self, name: String) {
     let todo =
-      Todo::new(self.next_index, name, self.tx_msg.clone());
+      Todo::new(self.next_index, name, self.tx_msg.clone(), recv());
 
     utils::nest_gizmos(&self.gizmo, &todo.gizmo)
       .unwrap();
@@ -77,18 +75,22 @@ impl TodoList {
       .todos
       .retain(|item| item.index != index);
   }
+
+  pub fn start_editing(&mut self) {}
+
+  pub fn end_editing(&mut self) {}
 }
 
 
 fn todo_list(
-  mut rx_todo: Receiver<String>,
+  rx_todo: Receiver<String>,
   mut tx_display: Transmitter<bool>,
   tx_num_items: Transmitter<usize>
 ) -> HtmlElement {
-  // Create a pair of terminals for all our todo list messages
-  let (tx_msg, mut rx_msg) = terminals();
+  // Create a pair of txrx for all our todo list messages
+  let (tx_msg, rx_msg) = txrx();
 
-  // Create a pair of terminals to tell the list when to display
+  // Create a pair of txrx to tell the list when to display
   let rx_display = tx_display.spawn_recv();
 
   // Create a new mutable TodoList,
@@ -98,48 +100,30 @@ fn todo_list(
 
   // Forward rx_todo into tx_msg
   rx_todo.forward_map(
-    tx_msg,
-    |name| Some(TodoListMsg::AddTodo(name.to_string()))
+    &tx_msg,
+    |name| TodoListMsg::TodoAdd(name.to_string())
   );
 
   // Set our responder to all incoming TodoListMsgs
-  rx_msg.set_responder(move |msg| {
+  rx_msg.respond(move |msg| {
     let num_todos_before =
       list.todos.len();
 
     use TodoListMsg::*;
     match msg {
-      AddTodo(name) => {
+      TodoAdd(name) => {
         list.add_todo(name.to_string());
       }
-      RemoveTodo(index) => {
+      TodoRemove(index) => {
         list.remove_todo(*index);
       }
-      CompleteTodo(index) => {
+      TodoUpdateName(index, name) => {
         list
           .todos
           .get_mut(*index)
           .into_iter()
           .for_each(|todo| {
-            todo.is_done = true;
-          });
-      }
-      UncompleteTodo(index) => {
-        list
-          .todos
-          .get_mut(*index)
-          .into_iter()
-          .for_each(|todo| {
-            todo.is_done = false;
-          });
-      }
-      EditedTodo(index, name) => {
-        list
-          .todos
-          .get_mut(*index)
-          .into_iter()
-          .for_each(|todo| {
-            todo.name = name.clone();
+            todo.name = name.to_string();
           });
       }
     }
