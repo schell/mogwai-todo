@@ -189,13 +189,19 @@ impl Component for App {
           ]
         }
         In::NewTodoInput(el) => {
-          self.todo_input =
-            Some(
-              el
-                .clone()
-                .dyn_into::<HtmlInputElement>()
-                .expect("todo input is not an input element")
-            );
+          let input =
+            el
+            .clone()
+            .dyn_into::<HtmlInputElement>()
+            .expect("todo input is not an input element");
+          self.todo_input = Some(input.clone());
+          timeout(0, move || {
+            input
+              .focus()
+              .unwrap();
+            // Never reschedule the timeout
+            false
+          });
           vec![]
         }
         In::Filter(show) => {
