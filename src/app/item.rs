@@ -74,10 +74,10 @@ impl Component for Todo {
   type ModelMsg = TodoIn;
   type ViewMsg = TodoOut;
 
-  fn update(&mut self, msg: &TodoIn, _: &Subscriber<TodoIn>) -> Vec<TodoOut> {
+  fn update(&mut self, msg: &TodoIn, tx_view: &Transmitter<TodoOut>, _: &Subscriber<TodoIn>) {
     match msg {
       TodoIn::SetVisible(visible) => {
-        vec![TodoOut::SetVisible(*visible)]
+        tx_view.send(&TodoOut::SetVisible(*visible));
       }
       TodoIn::CompletionToggleInput(el) => {
         self.toggle_input = Some(
@@ -85,7 +85,6 @@ impl Component for Todo {
             .dyn_into::<HtmlInputElement>()
             .expect("Todo toggle completion input is not an input")
         );
-        vec![]
       }
       TodoIn::EditInput(el) => {
         self.edit_input = Some(
@@ -93,11 +92,10 @@ impl Component for Todo {
             .dyn_into::<HtmlInputElement>()
             .expect("Todo edit input is not an input")
         );
-        vec![]
       }
       TodoIn::ToggleCompletion => {
         self.is_done = !self.is_done;
-        vec![TodoOut::UpdateEditComplete(self.is_editing, self.is_done)]
+        tx_view.send(&TodoOut::UpdateEditComplete(self.is_editing, self.is_done));
       }
       TodoIn::SetCompletion(completed) => {
         self.is_done = *completed;
@@ -105,7 +103,7 @@ impl Component for Todo {
           .toggle_input
           .iter()
           .for_each(|input| input.set_checked(*completed));
-        vec![TodoOut::UpdateEditComplete(self.is_editing, self.is_done)]
+        tx_view.send(&TodoOut::UpdateEditComplete(self.is_editing, self.is_done));
       }
       TodoIn::StartEditing => {
         self.is_editing = true;
@@ -121,7 +119,7 @@ impl Component for Todo {
             .unwrap();
           false
         });
-        vec![TodoOut::UpdateEditComplete(self.is_editing, self.is_done)]
+        tx_view.send(&TodoOut::UpdateEditComplete(self.is_editing, self.is_done));
       }
       TodoIn::StopEditing(may_ev) => {
         self.is_editing = false;
@@ -156,16 +154,14 @@ impl Component for Todo {
             .into_iter()
             .for_each(|name| self.name = name);
         }
-        vec![
-          TodoOut::SetName(self.name.clone()),
-          TodoOut::UpdateEditComplete(self.is_editing, self.is_done)
-        ]
+        tx_view.send(&TodoOut::SetName(self.name.clone()));
+        tx_view.send(&TodoOut::UpdateEditComplete(self.is_editing, self.is_done));
       }
       TodoIn::Remove => {
         // A todo cannot remove itself - its gizmo is owned by the parent App.
         // So we'll fire out a TodoOut::Remove and let App's update function
         // handle that.
-        vec![TodoOut::Remove]
+        tx_view.send(&TodoOut::Remove);
       }
     }
   }

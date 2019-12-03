@@ -43,7 +43,7 @@ pub enum Out {
 
 pub struct App {
   next_index: usize,
-  todos: Vec<(GizmoComponent<Todo>)>,
+  todos: Vec<GizmoComponent<Todo>>,
   todo_input: Option<HtmlInputElement>,
   todo_toggle_input: Option<HtmlInputElement>,
   todo_list_ul: Option<HtmlElement>,
@@ -145,165 +145,151 @@ impl Component for App {
   type ModelMsg = In;
   type ViewMsg = Out;
 
-  fn update(&mut self, msg: &In, sub: &Subscriber<In>) -> Vec<Out> {
-    let out_msgs =
-      match msg {
-        In::NewTodo(name, complete) => {
-          let index = self.next_index;
-          // Turn the new todo into a sub-component.
-          let mut component = Todo::new(index, name.to_string()).into_component();
-          // Subscribe to some of its view messages
-          sub.subscribe_filter_map(
-            &component.recv,
-            move |todo_out_msg| {
-              match todo_out_msg {
-                TodoOut::UpdateEditComplete(_, is_complete) => {
-                  Some(In::ChangedCompletion(index, *is_complete))
-                }
-                TodoOut::Remove => {
-                  Some(In::Remove(index))
-                }
-                _ => { None }
+  fn update(&mut self, msg: &In, tx_view: &Transmitter<Out>, sub: &Subscriber<In>) {
+    match msg {
+      In::NewTodo(name, complete) => {
+        let index = self.next_index;
+        // Turn the new todo into a sub-component.
+        let mut component = Todo::new(index, name.to_string()).into_component();
+        // Subscribe to some of its view messages
+        sub.subscribe_filter_map(
+          &component.recv,
+          move |todo_out_msg| {
+            match todo_out_msg {
+              TodoOut::UpdateEditComplete(_, is_complete) => {
+                Some(In::ChangedCompletion(index, *is_complete))
               }
+              TodoOut::Remove => {
+                Some(In::Remove(index))
+              }
+              _ => { None }
             }
-          );
-          // Build it, append it to our ul and then store it. If the component goes
-          // out of scope it will be dropped and removed from the DOM automacally.
-          component.build();
-          if *complete {
-            component.update(&TodoIn::SetCompletion(true));
           }
-          // If we have a ul, add the component to it.
-          self
-            .todo_list_ul
-            .as_ref()
-            .iter()
-            .for_each(|ul| component.append_to(ul));
-          self.todos.push(component);
-          self.next_index += 1;
+        );
+        // Build it, append it to our ul and then store it. If the component goes
+        // out of scope it will be dropped and removed from the DOM automacally.
+        component.build();
+        if *complete {
+          component.update(&TodoIn::SetCompletion(true));
+        }
+        // If we have a ul, add the component to it.
+        self
+          .todo_list_ul
+          .as_ref()
+          .iter()
+          .for_each(|ul| component.append_to(ul));
+        self.todos.push(component);
+        self.next_index += 1;
 
-          vec![
-            Out::ClearNewTodoInput,
-            Out::NumItems(self.todos.len()),
-            Out::ShouldShowTodoList(true),
-          ]
-        }
-        In::NewTodoInput(el) => {
-          let input =
-            el
-            .clone()
-            .dyn_into::<HtmlInputElement>()
-            .expect("todo input is not an input element");
-          self.todo_input = Some(input.clone());
-          timeout(0, move || {
-            input
-              .focus()
-              .unwrap();
-            // Never reschedule the timeout
-            false
-          });
-          vec![]
-        }
-        In::Filter(show) => {
-          self
-            .todos
-            .iter_mut()
-            .for_each(|component| {
-              let is_done = component.with_state(|t| t.is_done);
-              let is_visible =
-                *show == FilterShow::All
-                || (*show == FilterShow::Completed && is_done)
-                || (*show == FilterShow::Active && !is_done);
-              component.update(&TodoIn::SetVisible(is_visible));
-            });
-          vec![Out::SelectedFilter(show.clone())]
-        }
-        In::CompletionToggleInput(el) => {
-          self.todo_toggle_input =
-            el
-            .clone()
-            .dyn_into::<HtmlInputElement>()
-            .ok();
-          vec![Out::ShouldShowCompleteButton(self.are_any_complete())]
-        }
-        In::ChangedCompletion(_index, _is_complete) => {
-          let items_left = self.num_items_left();
-          self
-            .todo_toggle_input
-            .iter()
-            .for_each(|input| input.set_checked(items_left == 0));
-          vec![
-            Out::NumItems(items_left),
-            Out::ShouldShowCompleteButton(self.are_any_complete())
-          ]
-        }
-        In::ToggleCompleteAll => {
-          let input =
-            self
-            .todo_toggle_input
-            .as_ref()
+        tx_view.send(&Out::ClearNewTodoInput);
+        tx_view.send(&Out::NumItems(self.todos.len()));
+        tx_view.send(&Out::ShouldShowTodoList(true));
+      }
+      In::NewTodoInput(el) => {
+        let input =
+          el
+          .clone()
+          .dyn_into::<HtmlInputElement>()
+          .expect("todo input is not an input element");
+        self.todo_input = Some(input.clone());
+        timeout(0, move || {
+          input
+            .focus()
             .unwrap();
+          // Never reschedule the timeout
+          false
+        });
+      }
+      In::Filter(show) => {
+        self
+          .todos
+          .iter_mut()
+          .for_each(|component| {
+            let is_done = component.with_state(|t| t.is_done);
+            let is_visible =
+              *show == FilterShow::All
+              || (*show == FilterShow::Completed && is_done)
+              || (*show == FilterShow::Active && !is_done);
+            component.update(&TodoIn::SetVisible(is_visible));
+          });
+        tx_view.send(&Out::SelectedFilter(show.clone()));
+      }
+      In::CompletionToggleInput(el) => {
+        self.todo_toggle_input =
+          el
+          .clone()
+          .dyn_into::<HtmlInputElement>()
+          .ok();
+        tx_view.send(&Out::ShouldShowCompleteButton(self.are_any_complete()));
+      }
+      In::ChangedCompletion(_index, _is_complete) => {
+        let items_left = self.num_items_left();
+        self
+          .todo_toggle_input
+          .iter()
+          .for_each(|input| input.set_checked(items_left == 0));
+        tx_view.send(&Out::NumItems(items_left));
+        tx_view.send(&Out::ShouldShowCompleteButton(self.are_any_complete()));
+      }
+      In::ToggleCompleteAll => {
+        let input =
+          self
+          .todo_toggle_input
+          .as_ref()
+          .unwrap();
 
-          let should_complete = input.checked();
-          for todo in self.todos.iter_mut() {
-            todo.update(&TodoIn::SetCompletion(should_complete));
-          }
-          // We don't have to update here because it makes a round trip into
-          // In::ChangedCompletion via items' child messages
-          vec![]
+        let should_complete = input.checked();
+        for todo in self.todos.iter_mut() {
+          todo.update(&TodoIn::SetCompletion(should_complete));
         }
-        In::TodoListUl(ul) => {
-          self.todo_list_ul = Some(ul.clone());
-          // If we have todos already created (from local storage), add them to
-          // the ul.
-          self
-            .todos
-            .iter()
-            .for_each(|component| component.append_to(ul));
-          vec![]
-        }
-        In::Remove(index) => {
-          // Removing the gizmo drops its shared state, transmitters and receivers.
-          // This causes its Drop implementation to run, which removes its
-          // html_element from the parent.
-          self
-            .todos
-            .retain(|todo| todo.with_state(|t| t.index != *index));
-          let mut msgs = vec![];
-          if self.todos.len() == 0 {
-            // Update the toggle input checked state by hand
-            self
-              .todo_toggle_input
-              .iter()
-              .for_each(|input| input.set_checked(!self.are_all_complete()));
-            msgs.push(Out::ShouldShowTodoList(false));
-          }
-          msgs.push(Out::NumItems(self.num_items_left()));
-          msgs.push(Out::ShouldShowCompleteButton(self.are_any_complete()));
-          msgs
-        }
-        In::RemoveCompleted => {
-          self
-            .todos
-            .retain(|todo| todo.with_state(|t| !t.is_done));
+        // We don't have to send here because it makes a round trip into
+        // In::ChangedCompletion via items' child messages
+      }
+      In::TodoListUl(ul) => {
+        self.todo_list_ul = Some(ul.clone());
+        // If we have todos already created (from local storage), add them to
+        // the ul.
+        self
+          .todos
+          .iter()
+          .for_each(|component| component.append_to(ul));
+      }
+      In::Remove(index) => {
+        // Removing the gizmo drops its shared state, transmitters and receivers.
+        // This causes its Drop implementation to run, which removes its
+        // html_element from the parent.
+        self
+          .todos
+          .retain(|todo| todo.with_state(|t| t.index != *index));
+        if self.todos.len() == 0 {
+          // Update the toggle input checked state by hand
           self
             .todo_toggle_input
             .iter()
             .for_each(|input| input.set_checked(!self.are_all_complete()));
-          vec![
-            Out::NumItems(self.num_items_left()),
-            Out::ShouldShowCompleteButton(self.are_any_complete()),
-            Out::ShouldShowTodoList(self.num_items_left() > 0)
-          ]
+          tx_view.send(&Out::ShouldShowTodoList(false));
         }
-      };
+        tx_view.send(&Out::NumItems(self.num_items_left()));
+        tx_view.send(&Out::ShouldShowCompleteButton(self.are_any_complete()));
+      }
+      In::RemoveCompleted => {
+        self
+          .todos
+          .retain(|todo| todo.with_state(|t| !t.is_done));
+        self
+          .todo_toggle_input
+          .iter()
+          .for_each(|input| input.set_checked(!self.are_all_complete()));
+        tx_view.send(&Out::NumItems(self.num_items_left()));
+        tx_view.send(&Out::ShouldShowCompleteButton(self.are_any_complete()));
+        tx_view.send(&Out::ShouldShowTodoList(self.num_items_left() > 0));
+      }
+    };
 
     // In any case, serialize the current todo items.
     let items = self.items();
     store::write_items(items)
       .expect("Could not store todos");
-
-    out_msgs
   }
 
   fn builder(&self, tx: Transmitter<In>, rx: Receiver<Out>) -> GizmoBuilder {
@@ -335,6 +321,7 @@ impl Component for App {
           .with(
             input()
               .class("new-todo")
+              .attribute("id", "new-todo")
               .attribute("placeholder", "What needs to be done?")
               .tx_on(
                 "change",
